@@ -21,7 +21,7 @@ async function createCall() {
   const call = await client.calls.create({
     from: process.env.TWILIO_PHONE_NUMBER,
     to: "+19098278614",
-    url: "http://demo.twilio.com/docs/voice.xml",
+    url: "https://handler.twilio.com/twiml/EH4817ac1ff3a86f4f185d9d014588dbea",
   });
 
   console.log(call.sid);
@@ -66,5 +66,5 @@ async function createMessage() {
 app.listen(3000, () => {
   console.log(`Listening on port ${3000}`);
   console.log("Server started!");
-  createMessage();
+  createCall();
 });
