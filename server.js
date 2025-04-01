@@ -257,7 +257,7 @@ app.post("/voice", (request, response) => {
       <Start>
         <Stream url="wss://${request.headers.host}/"/>
       </Start>
-      <Say>Hello</Say>
+      <Say>Hello, this is a reminder from your healthcare provider to confirm your medications for the day. Please confirm if you have taken your Aspirin, Cardivol, and Metformin today.</Say>
       <Pause length="60" />
     </Response>
   `);
