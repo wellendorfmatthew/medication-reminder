@@ -167,17 +167,28 @@ async function outboundMedicationReminder() {
   const call = await client.calls.create({
     from: process.env.TWILIO_PHONE_NUMBER,
     to: "+19098278614",
-    url: "https://c3ca-2603-6081-6f00-e44-4800-c52e-40ec-d16f.ngrok-free.app/voice",
+    twiml: `<Response>
+      <Start>
+        <Stream url="wss://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/"/>
+      </Start>
+      <Say>Hello, this is a reminder from your healthcare provider to confirm your medications for the day. Please confirm if you have taken your Aspirin, Cardivol, and Metformin today.</Say>
+      <Pause length="60" />
+    </Response>`,
+    statusCallback:
+      "https://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/status",
+    statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+    statusCallbackMethod: "POST",
+    machineDetection: "Enable",
   });
 
-  console.log(call.sid);
-  console.log(call.status);
-  console.log(call.answeredBy);
-  console.log(call.dateCreated);
-  console.log(call.direction);
-  console.log(call.duration);
-  console.log(call.startTime);
-  console.log(call.endTime);
+  // console.log(call.sid);
+  // console.log(call.status);
+  // console.log(call.answeredBy);
+  // console.log(call.dateCreated);
+  // console.log(call.direction);
+  // console.log(call.duration);
+  // console.log(call.startTime);
+  // console.log(call.endTime);
 }
 
 /**
@@ -187,20 +198,30 @@ async function outboundUnansweredCall() {
   const call = await client.calls.create({
     from: process.env.TWILIO_PHONE_NUMBER,
     to: "+19098278614",
-    twiml:
-      "<Response><Say>We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.</Say></Response>",
+    twiml: `<Response>
+      <Start>
+        <Stream url="wss://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/"/>
+      </Start>
+      <Say>We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.</Say>
+      <Pause length="60" />
+    </Response>`,
+    statusCallback:
+      "https://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/status",
+    statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+    statusCallbackMethod: "POST",
+    machineDetection: "Enable",
   });
 
-  console.log(call.sid);
-  console.log(call.status);
-  console.log(call.answeredBy);
-  console.log(call.dateCreated);
-  console.log(call.direction);
-  console.log(call.duration);
-  console.log(call.startTime);
-  console.log(call.endTime);
-  console.log(call.uri);
-  console.log(call.transcriptions());
+  // console.log(call.sid);
+  // console.log(call.status);
+  // console.log(call.answeredBy);
+  // console.log(call.dateCreated);
+  // console.log(call.direction);
+  // console.log(call.duration);
+  // console.log(call.startTime);
+  // console.log(call.endTime);
+  // console.log(call.uri);
+  // console.log(call.transcriptions());
 }
 
 /**
@@ -246,7 +267,7 @@ async function outboundSMS() {
 }
 
 /**
- * Responds to incoming messages from a patient
+ * Responds to incoming calls from a patient
  */
 app.post("/voice", (request, response) => {
   process.stdout.write("Route entered");
@@ -261,16 +282,55 @@ app.post("/voice", (request, response) => {
       <Pause length="60" />
     </Response>
   `);
-  // const twiml = new VoiceResponse();
-  // twiml.say(
-  //   "Hello, this is a reminder from your healthcare provider to confirm your medications for the day. Please confirm if you have taken your Aspirin, Cardivol, and Metformin today."
-  // );
+});
 
-  // response.type("text/xml");
-  // response.send(twiml.toString());
+/**
+ * After a call depending on the status either the call data is logged or a voicemail/sms message gets sent to a patient
+ */
+app.post("/status", async (request, response) => {
+  const { CallSid, From, To, CallStatus, Direction, CallDuration, AnsweredBy } =
+    request.body;
+
+  console.log("Call Sid: ", CallSid);
+  console.log("From: ", From);
+  console.log("To: ", To);
+  console.log("Call Status: ", CallStatus);
+  console.log("Direction: ", Direction);
+  console.log("Call Duration: ", CallDuration, " seconds");
+  console.log("Answered By: ", AnsweredBy);
+
+  if (AnsweredBy === "machine_start" && CallStatus === "completed") {
+    const call = await client.calls.create({
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: "+19098278614",
+      twiml: `<Response>
+                <Start>
+                  <Stream url="wss://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/"/>
+                </Start>
+                <Record/>
+                <Say>We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.</Say>
+                <Pause length="60" />
+              </Response>`,
+      statusCallback:
+        "https://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/status",
+      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+      statusCallbackMethod: "POST",
+      machineDetection: "Enable",
+    });
+  } else if (CallStatus === "no-answer" || CallStatus === "failed") {
+    const message = await client.messages.create({
+      body: "We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.",
+      from: `${process.env.TWILIO_PHONE_NUMBER}`,
+      to: "+19098278614",
+    });
+
+    console.log(message.body);
+    console.log("SMS Sent: ", "True");
+  }
 });
 
 server.listen(3000, () => {
   console.log(`Listening on port ${3000}`);
   console.log("Server started!");
+  outboundMedicationReminder();
 });
