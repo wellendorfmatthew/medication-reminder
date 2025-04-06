@@ -159,3 +159,22 @@ https://github.com/user-attachments/assets/6e3eb14d-48fe-49f3-9713-5a3832ef97c8
 - After the system reminds you to take your medication respond to the question
 
 # Testing Evidence
+
+# Implement TTS Structure 4/01/2025
+
+- [X] Feature Change
+
+# Change Summary
+-Added second websocket server
+-Set up structure for listening for media streams containing text and converting to speech via Deepgram
+-Adjusted environment variables
+-If a caller isn't able to answer their phone an SMS message gets sent to their phone
+
+# Testing Instructions
+
+- Use ngrok http [portNumber] to connect to ngrok
+- Use npm start to start the server
+- Make an outbound call
+- Don't pick up the phone and wait for the call to end, you should see in the console the message that's supposed to be sent
+
+# Testing Evidence
