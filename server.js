@@ -3,11 +3,16 @@ const express = require("express");
 const twilio = require("twilio");
 const fs = require("node:fs");
 const { pipeline } = require("stream/promises");
-const { createClient, LiveTranscriptionEvents } = require("@deepgram/sdk");
+const {
+  createClient,
+  LiveTranscriptionEvents,
+  LiveTTSEvents,
+} = require("@deepgram/sdk");
 const VoiceResponse = require("twilio").twiml.VoiceResponse;
 const WebSocket = require("ws");
 const app = express();
 const server = require("http").createServer(app);
+const path = require("path");
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -15,6 +20,15 @@ const client = twilio(accountSid, authToken);
 const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
 const deepgramClient = createClient(deepgramApiKey);
 const wss = new WebSocket.Server({ server });
+const deepgramURL =
+  "wss://api.deepgram.com/v1/speak?encoding=mulaw&sample_rate=8000&container=none";
+const options = {
+  headers: {
+    Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+  },
+};
+
+let deepgramWSS = new WebSocket(deepgramURL, options);
 let keepAlive;
 let transcriptChunks = [];
 let transcripts = [];
@@ -23,8 +37,11 @@ const finalTranscript = [];
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-console.log("deepgram api", deepgramApiKey);
+//console.log("deepgram api", deepgramApiKey);
 
+/**
+ * Sets up deepgram connection for speech to text
+ */
 const setupDeepgram = (ws) => {
   const deepgram = deepgramClient.listen.live({
     language: "en",
@@ -164,64 +181,23 @@ wss.on("connection", (ws) => {
  * Initiates an outbound call to a patient reminding them to confirm their medications
  */
 async function outboundMedicationReminder() {
+  const streamUrl = `wss://${process.env.NGROK_URL}/`;
+  const statusURL = `https://${process.env.NGROK_URL}/status`;
   const call = await client.calls.create({
     from: process.env.TWILIO_PHONE_NUMBER,
-    to: "+19098278614",
+    to: process.env.USER_PHONE_NUMBER,
     twiml: `<Response>
       <Start>
-        <Stream url="wss://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/"/>
+        <Stream url="${streamUrl}"/>
       </Start>
       <Say>Hello, this is a reminder from your healthcare provider to confirm your medications for the day. Please confirm if you have taken your Aspirin, Cardivol, and Metformin today.</Say>
       <Pause length="60" />
     </Response>`,
-    statusCallback:
-      "https://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/status",
+    statusCallback: statusURL,
     statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
     statusCallbackMethod: "POST",
     machineDetection: "Enable",
   });
-
-  // console.log(call.sid);
-  // console.log(call.status);
-  // console.log(call.answeredBy);
-  // console.log(call.dateCreated);
-  // console.log(call.direction);
-  // console.log(call.duration);
-  // console.log(call.startTime);
-  // console.log(call.endTime);
-}
-
-/**
- * Initiates an outbound call when a patient doesn't respond asking them to call back
- */
-async function outboundUnansweredCall() {
-  const call = await client.calls.create({
-    from: process.env.TWILIO_PHONE_NUMBER,
-    to: "+19098278614",
-    twiml: `<Response>
-      <Start>
-        <Stream url="wss://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/"/>
-      </Start>
-      <Say>We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.</Say>
-      <Pause length="60" />
-    </Response>`,
-    statusCallback:
-      "https://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/status",
-    statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-    statusCallbackMethod: "POST",
-    machineDetection: "Enable",
-  });
-
-  // console.log(call.sid);
-  // console.log(call.status);
-  // console.log(call.answeredBy);
-  // console.log(call.dateCreated);
-  // console.log(call.direction);
-  // console.log(call.duration);
-  // console.log(call.startTime);
-  // console.log(call.endTime);
-  // console.log(call.uri);
-  // console.log(call.transcriptions());
 }
 
 /**
@@ -260,11 +236,113 @@ async function outboundSMS() {
   const message = await client.messages.create({
     body: "We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.",
     from: `${process.env.TWILIO_PHONE_NUMBER}`,
-    to: "+19098278614",
+    to: `${process.env.USER_PHONE_NUMBER}`,
   });
 
   console.log(message.body);
 }
+
+/**
+ * Sets up deepgram connection for text to speech
+ */
+// deepgramWSS.on("connection", (ws) => {
+//   console.log("Second WSS Connected");
+
+//   let deepgramSocket;
+
+//   ws.on("message", async (message) => {
+//     console.log("Second WSS Received message: ", `${message}`);
+
+//     try {
+//       const data = JSON.parse(message);
+//       const text = data.text;
+//       const model = data.model || "aura-asteria-en";
+
+//       if (!text) {
+//         console.log("No text provided");
+//         return;
+//       }
+
+//       deepgramSocket = deepgram.speak.live({
+//         model: model,
+//         encoding: "mulaw",
+//         sample_rate: 48000,
+//       });
+
+//       deepgramSocket.on(LiveTTSEvents.Open, () => {
+//         console.log("Deepgram TTS open");
+
+//         ws.send(JSON.stringify({ type: "Open" }));
+
+//         deepgramSocket.sendText(text);
+//         deepgramSocket.flush();
+//       });
+
+//       deepgramSocket.on(LiveTTSEvents.Audio, (data) => {
+//         console.log("Received audio data from Deepgram");
+//         ws.send(data);
+//       });
+
+//       deepgramSocket.on(LiveTTSEvents.Flushed, () => {
+//         console.log("Deepgram TTS Flushed");
+
+//         ws.send(JSON.stringify({ type: "Flushed" }));
+//       });
+
+//       deepgramSocket.on(LiveTTSEvents.Close, () => {
+//         console.log("Deepgram TTS Closed");
+
+//         ws.send(JSON.stringify({ type: "Close" }));
+//         deepgramSocket = null;
+//       });
+
+//       deepgramSocket.on(LiveTTSEvents.Error, (error) => {
+//         console.error("Deepgram TTS Websocket error: ", error);
+
+//         ws.send(JSON.stringify({ type: "Error", error: error.message }));
+//       });
+//     } catch (err) {
+//       console.log("Error: ", err);
+//       ws.send(JSON.stringify({ type: "Error", error: err.message }));
+//     }
+//   });
+//   ws.on("close", () => {
+//     console.log("Second Web Socket Disconnected");
+//     if (deepgramSocket) {
+//       deepgramSocket.requestClose();
+//       deepgramSocket = null;
+//     }
+//   });
+// });
+
+// function writeFile() {
+//   if (audioBuffer.length > 0) {
+//     fs.writeFile("output.mp3", audioBuffer, (err) => {
+//       if (err) {
+//         console.error("Error writing audio file: ", err);
+//       } else {
+//         console.log("Audio file saved as output.mp3");
+//       }
+//     });
+
+//     audioBuffer = Buffer.alloc(0);
+//   }
+// }
+
+// app.post("/deepgramTTS", async (request, response) => {
+//   process.stdout.write("Deepgram Route Entered");
+
+//   const ttsRequest = await fetch(deepgramURL, {
+//     headers: {
+//       Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+//     },
+//   });
+
+//   response.send({
+//     type: "Speak",
+//     text: "Hello, this is a reminder from your healthcare provider to confirm your medications for the day. Please confirm if you have taken your Aspirin, Cardivol, and Metformin today.",
+//   });
+// });
 
 /**
  * Responds to incoming calls from a patient
@@ -299,29 +377,15 @@ app.post("/status", async (request, response) => {
   console.log("Call Duration: ", CallDuration, " seconds");
   console.log("Answered By: ", AnsweredBy);
 
-  if (AnsweredBy === "machine_start" && CallStatus === "completed") {
-    const call = await client.calls.create({
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: "+19098278614",
-      twiml: `<Response>
-                <Start>
-                  <Stream url="wss://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/"/>
-                </Start>
-                <Record/>
-                <Say>We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.</Say>
-                <Pause length="60" />
-              </Response>`,
-      statusCallback:
-        "https://000c-2603-6081-6f00-e44-8cf1-3edd-a49d-1000.ngrok-free.app/status",
-      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-      statusCallbackMethod: "POST",
-      machineDetection: "Enable",
-    });
-  } else if (CallStatus === "no-answer" || CallStatus === "failed") {
+  if (
+    AnsweredBy === "machine_start" &&
+    CallStatus === "completed" &&
+    Direction === "outbound-api"
+  ) {
     const message = await client.messages.create({
       body: "We called to check on your medication but couldn't reach you. Please call us back or take your medications if you haven't done so.",
       from: `${process.env.TWILIO_PHONE_NUMBER}`,
-      to: "+19098278614",
+      to: `${process.env.USER_PHONE_NUMBER}`,
     });
 
     console.log(message.body);
